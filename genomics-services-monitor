@@ -86,21 +86,31 @@ def main(args):
             f.write('[]\n')
 
     while True:
-        services = parse_services_list(args.services_list)
-        previous_service_statuses = parse_service_status(args.service_status_output)
+        try:
+            services = parse_services_list(args.services_list)
+            previous_service_statuses = parse_service_status(args.service_status_output)
+            current_service_statuses = []
+            
+            for service in services:
+                current_service_status = check_service(service)
+                for previous_service_status in previous_service_statuses:
+                    if current_service_status['service_id'] == previous_service_status['service_id']:
+                        current_service_status = update_service_status(previous_service_status, current_service_status)
+                current_service_statuses.append(current_service_status)
 
-        current_service_statuses = []
-        for service in services:
-            current_service_status = check_service(service)
-            for previous_service_status in previous_service_statuses:
-                if current_service_status['service_id'] == previous_service_status['service_id']:
-                    current_service_status = update_service_status(previous_service_status, current_service_status)
-            current_service_statuses.append(current_service_status)
+            with open(args.service_status_output, 'w') as f:
+                json.dump(current_service_statuses, f, indent=2)
+            time.sleep(args.scan_interval_seconds)
+        except KeyboardInterrupt as e:
+            timestamp_checked = datetime.datetime.now().isoformat()
+            for service_status in previous_service_statuses:
+                if service_status['service_id'] == 'genomics-services-monitor.service':
+                   service_status['active_state'] = 'inactive'
+                   service_status['timestamp_checked'] = timestamp_checked
+            with open(args.service_status_output, 'w') as f:
+                json.dump(previous_service_statuses, f, indent=2)
 
-        with open(args.service_status_output, 'w') as f:
-            json.dump(current_service_statuses, f, indent=2)
-        time.sleep(args.scan_interval_seconds)
-
+            exit(-1)
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
