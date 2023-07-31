@@ -51,7 +51,6 @@ def check_service(service_name):
 
     service['service_name'] = service['service_id'].removesuffix('.service')
 
-    print(json.dumps(service, indent=2))
     return service
 
 
