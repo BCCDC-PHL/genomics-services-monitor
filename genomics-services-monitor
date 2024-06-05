@@ -129,17 +129,26 @@ def main(args):
             else:
                 service_status_json_path = os.path.join(args.service_status_outdir, f"{args.service_status_prefix}_services.json")
 
-            with open(service_status_json_path, 'w') as f:
-                f.write('[]\n')
+            if not os.path.exists(service_status_json_path):
+                with open(service_status_json_path, 'w') as f:
+                    f.write('[]\n')
 
             current_service_statuses = []
-            for service in services:                
+            current_service_logs_by_service_name = {}
+            for service in services:
                 service_name = service.get('service_name', None)
                 if not service_name:
+                    print(json.dumps({
+                        "timestamp": datetime.datetime.now().isoformat(),
+                        "message": {
+                            "event_type": "service_skipped",
+                            "reason": "failed to determine service name",
+                        }
+                    })) 
                     continue
+
                 current_service_status = check_service(service_name)
                 previous_service_statuses = parse_service_status(service_status_json_path)
-                current_service_logs_by_service_name = {}
                 for previous_service_status in previous_service_statuses:
                     if current_service_status['service_id'] == previous_service_status['service_id']:
                         current_service_status = update_service_status(previous_service_status, current_service_status)
@@ -147,18 +156,62 @@ def main(args):
 
                 if service['log_path'] is not None:
                     # Take the last 100 lines of the log file
+                    service_log_lines = []
                     try:
+                        print(json.dumps({
+                            "timestamp": datetime.datetime.now().isoformat(),
+                            "message": {
+                                "event_type": "log_collection_started",
+                                "service_name": service_name,
+                            }
+                        }))
                         result = subprocess.run(["tail", "-n", "100", service['log_path']], capture_output=True, text=True, check=True)
-                        log_lines = result.stdout.split('\n')
-                        log_lines = [line for line in log_lines if line]
-                        current_service_logs_by_service_name[service_name] = log_lines
+                        service_log_lines = result.stdout.split('\n')
                     except subprocess.CalledProcessError as e:
+                        print(json.dumps({
+                            "timestamp": datetime.datetime.now().isoformat(),
+                            "message": {
+                                "event_type": "failed_to_collect_logs",
+                                "service_name": service_name,
+                            }
+                        }))
                         current_service_logs_by_service_name[service_name] = []
+
+                    parsed_service_log_lines = []
+                    for log_line in service_log_lines:
+                        if not log_line:
+                            continue
+                        try:
+                            # Note: we should fix these in the service logging formatters
+                            log_line = log_line.replace("\"module\",", "\"module\":")
+                            log_line = log_line.replace("\"line_num\",", "\"line_num\":")
+                            parsed_line = json.loads(log_line)
+                        except Exception as e:
+                            print(json.dumps({
+                                "timestamp": datetime.datetime.now().isoformat(),
+                                "message": {
+                                    "event_type": "log_line_parsing_failed",
+                                    "service_name": service_name,
+                                    "error": str(e),
+                                }
+                            }))
+                            print(log_line)
+                            continue
+                        parsed_service_log_lines.append(parsed_line)
+                    current_service_logs_by_service_name[service_name] = parsed_service_log_lines
 
             with open(service_status_json_path, 'w') as f:
                 json.dump(current_service_statuses, f, indent=2)
+
             next_scan_timestamp = datetime.datetime.now() + datetime.timedelta(seconds=args.scan_interval_seconds)
-            print(json.dumps({"timestamp": datetime.datetime.now().isoformat(), "message": {"event_type": "service_status_updated", "services_checked": [service['service_name'] for service in services], "timestamp_next_scan_start": next_scan_timestamp.isoformat()}}))
+            print(json.dumps({
+                "timestamp": datetime.datetime.now().isoformat(),
+                "message": {
+                    "event_type": "service_status_updated",
+                    "services_checked": [service['service_name'] for service in services],
+                    "timestamp_next_scan_start": next_scan_timestamp.isoformat(),
+                }
+            }))
 
             for service_name, log_lines in current_service_logs_by_service_name.items():
                 if not os.path.exists(os.path.join(args.service_status_outdir, 'logs', args.service_status_prefix)):
