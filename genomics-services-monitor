@@ -132,13 +132,13 @@ def main(args):
             with open(service_status_json_path, 'w') as f:
                 f.write('[]\n')
 
+            current_service_statuses = []
             for service in services:                
                 service_name = service.get('service_name', None)
                 if not service_name:
                     continue
                 current_service_status = check_service(service_name)
                 previous_service_statuses = parse_service_status(service_status_json_path)
-                current_service_statuses = []
                 current_service_logs_by_service_name = {}
                 for previous_service_status in previous_service_statuses:
                     if current_service_status['service_id'] == previous_service_status['service_id']:
