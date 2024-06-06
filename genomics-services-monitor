@@ -219,9 +219,7 @@ def main(args):
                 log_json_output_path = os.path.join(args.service_status_outdir, 'logs', args.service_status_prefix, f"{service_name}_log.json")
 
                 with open(log_json_output_path, 'w') as f:
-                    for line in log_lines:
-                        json.dump(line, f)
-                        f.write('\n')
+                    json.dump(log_lines, f, indent=2)
 
             time.sleep(args.scan_interval_seconds)
         except KeyboardInterrupt as e:
